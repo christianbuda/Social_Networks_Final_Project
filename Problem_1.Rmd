@@ -1,0 +1,644 @@
+---
+title: "Problem_1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r test setup, message=FALSE, warning=FALSE}
+# libraries used
+require(igraph, quietly = TRUE)
+require(latex2exp, quietly = TRUE )
+require(knitr, quietly = TRUE )
+require(progress, quietly = TRUE )
+require(kableExtra, quietly = TRUE )
+set.seed(420)
+```
+```{r get colors, echo=FALSE}
+
+##### here we make some colors for later #####
+
+
+somecolornames = c('chocolate1', 'aquamarine1', 'chartreuse1', 'cornflowerblue', 'coral1', 'cyan1', 'brown1', 'darkgoldenrod1', 'darkolivegreen1', 'dodgerblue3', 'goldenrod1', 'indianred1', 'khaki', 'magenta1', 'olivedrab1', 'orangered', 'royalblue1', 'seagreen1', 'salmon', 'tomato', 'yellow', 'springgreen', 'steelblue', 'tan2', 'slateblue1', 'plum1')
+
+
+transparent_color <- function(color, alpha = 0.4) {
+
+  rgb_col <- col2rgb(color)/255
+
+  col <- rgb(rgb_col[1], rgb_col[2], rgb_col[3], alpha = alpha)
+
+  return(col)
+}
+
+somecolors = list()
+
+for( i in 1:length(somecolornames)) {
+  somecolors = append(somecolors, list(transparent_color(somecolornames[i], alpha = 0.4)))
+}
+
+
+```
+
+# Social Networks and Online Markets, Homework 1
+### Author: Christian Buda
+
+# Problem 1
+
+# Implementations
+## Erdős–Rènyi random graph
+Let's start by implementing a basic implementation of this model:
+```{r ER implementation}
+generate_ER_graph = function(n,p) {
+  # this function generates an erdos-renyi graph
+  # with n nodes and edge probability p
+  
+  if (p < 0 | p > 1) stop("p must be in [0,1]")
+  
+  # initialize edge list
+  edge_list = data.frame(x = numeric(0), y = numeric(0))
+  
+  # progressive number of edges
+  edge_count = 1
+  
+  # randomly generate the edge list
+  for (i in 1:(n-1)) {
+    for (j in (i + 1):n) {
+      
+      if (runif(1) <= p) {
+        edge_list[edge_count,] = c(i,j)
+        edge_count = edge_count + 1
+      }
+      
+    }
+  }
+  
+  # create graph
+  g = graph_from_data_frame(edge_list, directed = FALSE, vertices = data.frame(name = 1:n))
+  return(g)
+}
+
+plot(generate_ER_graph(20, 0.2))
+```
+
+This implementation is really slow; to make it quicker, we start by noting that the total number of edges in this model is distributed as a binomial with $N = \frac{n(n-1)}{2}$ and probability $p$. Because of this, an equivalent approach to the classical $G_{n,p}$ is to sample a random number $k$ according to this distribution, and then sample $k$ edges from the list of all possible edges.
+
+To sample from the list of all possible edges without actually creating this list (which can be expensive), we need a way to index them; consider the following adjacency matrix:
+$$\begin{pmatrix}
+- & - & - & -\\
+0 & - & - & -\\
+1 & 2 & - & -\\
+3 & 4 & 5 & -
+\end{pmatrix}$$
+Here each entry represents an edge (the diagonal is not considered because we are not allowing for self loops, and, since the graph is undirected, only the lower half of the matrix is shown), and the number in each entry is the index of the corresponding edge.
+
+It is easy to see that, given $i\in\{1,2,\dots,n-1\}$ index of the rows, and $j\in\{0,1,\dots,i-1\}$, the index corresponding to entry $(i,j)$ is given by $\frac{i(i-1)}{2}+j$. We want to invert this relationship; to do this, we start by noting that, given $n$ index of an edge, the corresponding row is given by $i = \max\{k|\frac{k(k-1)}{2}\leq n\}$. By solving the equation $k^2-k-2n=0$ (by taking the rightmost solution) we get $k^* = \frac{1+\sqrt{1+8n}}{2}$, from which we get our solution $i = \lfloor k^*\rfloor = \lfloor \frac{1+\sqrt{1+8n}}{2} \rfloor$, and then the column index is just found as $j=n-\frac{i(i-1)}{2}$. We are now ready to implement the function that will generate our graphs.
+
+```{r ER fast implementation}
+
+generate_ER_graph_fast = function(n,p) {
+  # this function generates an erdos-renyi graph
+  # with n nodes and edge probability p
+  
+  if (p < 0 | p > 1) stop("p must be in [0,1]")
+  
+  num_edges = rbinom(1, n*(n-1)/2, p)
+  
+  if (p<=0.5) {
+    sampled_edges = sample(0:((n*(n-1)/2)-1), size = num_edges)
+  } else {
+    # if p>0.5 it is easier to sample the non existing edges
+    sampled_edges = sample(1:(n*(n-1)/2), size = n*(n-1)/2 - num_edges)
+    sampled_edges = (0:((n*(n-1)/2)-1))[-sampled_edges]
+  }
+  
+  # get source node of each edge
+  source = floor((sqrt(8*sampled_edges+1)+1)/2)
+  
+  # get target node of each edge
+  target = sampled_edges - source*(source-1)/2
+  
+  edge_list = matrix(0, ncol = 2, nrow = num_edges)
+  edge_list[,1] = source + 1
+  edge_list[,2] = target + 1
+  
+  g = graph_from_edgelist(edge_list, directed = FALSE)
+  
+  # it is possible that some of the last nodes are isolated
+  # and do not compare in the edge list, so we add them by and if needed
+  g = add_vertices(g, n-length(V(g)))
+  
+  return(g)
+}
+
+
+plot(generate_ER_graph_fast(20, 0.2))
+```
+
+## Watts–Strogatz model
+As before, we start with the naive implementation:
+
+```{r WS implementation}
+
+generate_WS_graph = function(n, nei, beta) {
+  # this function generates a watts-strogatz small world graph
+  # with n nodes, nei initial neighbours for each node, and rewiring probability beta
+  
+  if (nei%%2 != 0) stop("nei needs to be even")
+  if (nei >= n-1) stop("nei needs to be less than n-1")
+  if (beta < 0 | beta > 1) stop("beta must be in [0,1]")
+  
+  # to easily handle node numbers that go over n
+  format_node = function(node,n) (node-1)%%n + 1
+  
+  # to find the right neighbours of a node in a regular ring with nei neighbours
+  right_neighbours = function(node, nei, n) format_node(node+1:nei, n)
+  
+  # initialize edge list
+  edge_list = data.frame(x = numeric(0), y = numeric(0))
+  
+  # generate edge list for a regular ring graph
+  # by stacking the edges corresponding to the rightneighbors of each node
+  for (i in 1:n) {
+    edge_list = rbind(edge_list, data.frame(x = rep(i, nei/2), y = right_neighbours(i, nei/2, n)))
+  }
+  
+  # rewire some of the edges
+  for (i in 1:nrow(edge_list)) {
+    
+    if (runif(1) <= beta) {
+      edge_list[i,2] = sample((1:n)[-edge_list[i,1]], size = 1)
+    }
+    
+  }
+  
+  # create graph
+  g = graph_from_data_frame(edge_list, directed = FALSE, vertices = data.frame(name = 1:n))
+  return(g)
+}
+
+
+plot(generate_WS_graph(20,4,0.3))
+```
+
+
+To make this faster, we use the same trick as before, extracting the number of rewired edges beforehand, and then extracting the edges to rewire as a random sample of fixed size from the list of all possible edges. Since the graph is pre-existing here, we just rewire some of the existing edges (being careful not to create self-loops).
+
+```{r WS better implementation}
+
+generate_WS_graph_better = function(n, nei, beta) {
+  # this function generates a watts-strogatz small world graph
+  # with n nodes, nei initial neighbours for each node, and rewiring probability beta
+  
+  if (nei%%2 != 0) stop("nei needs to be even")
+  if (nei >= n-1) stop("nei needs to be less than n-1")
+  if (beta < 0 | beta > 1) stop("beta must be in [0,1]")
+  
+  
+  # initialize edge list
+  edge_list = matrix(0, ncol = 2, nrow = n*nei/2)
+  
+  # here we generate the edge list for a ring graph
+  # by stacking the edges corresponding to the rightneighbors of each node
+  edge_list[,1] = rep(1:n, rep(nei/2, n))                # source nodes (nei/2 for each node)
+  edge_list[,2] = (edge_list[,1] + 0:(nei/2 - 1))%%n + 1 # right neighbors of each source node
+  
+  # sample the number of edges to rewire
+  num_edges = rbinom(1, n*nei/2, beta)
+  # sample the edges to rewire
+  sampled_edges = sample(1:(n*nei/2), size = num_edges)
+  
+  # rewire each sampled edge, being careful not to create self loops
+  find_new_target = function(source) sample((1:n)[-source], size = 1)
+  edge_list[sampled_edges,2] = sapply(edge_list[sampled_edges,1], find_new_target)
+  
+  # create graph
+  g = graph_from_edgelist(edge_list, directed = FALSE)
+  return(g)
+}
+
+
+plot(generate_WS_graph_better(20,4,0.3))
+```
+
+We can make this a bit faster by "batching" the sampling of each to-be-rewired edge based on the source node. In this way it is much easier to make sure that no self-loops will be created (even though they are not important if $n$ is large enough).
+
+```{r WS fast implementation}
+
+generate_WS_graph_fast = function(n, nei, beta) {
+  # this function generates a watts-strogatz small world graph
+  # with n nodes, nei initial neighbours for each node, and rewiring probability beta
+  
+  if (nei%%2 != 0) stop("nei needs to be even")
+  if (nei >= n-1) stop("nei needs to be less than n-1")
+  if (beta < 0 | beta > 1) stop("beta must be in [0,1]")
+  
+  
+  # initialize edge list
+  edge_list = matrix(0, ncol = 2, nrow = n*nei/2)
+  
+    # here we generate the edge list for a ring graph
+  # by stacking the edges corresponding to the rightneighbors of each node
+  edge_list[,1] = rep(1:n, rep(nei/2, n))                # source nodes (nei/2 for each node)
+  edge_list[,2] = (edge_list[,1] + 0:(nei/2 - 1))%%n + 1 # right neighbors of each source node
+  
+  # sample how many neighbors are rewired for each of the nodes
+  edge_per_node = rbinom(n, nei/2, beta)
+  
+  # for each source node sample which edge to rewire,
+  # done by sampling which right-neighbor which the edge is connected to
+  # (indexing them as the index of the corresponding edge in edge_list)
+  sample_edges = function(source, size) sample(1:(nei/2), size = size) + (source-1)*nei/2
+  edge_to_rewire = unlist(mapply(sample_edges, 1:n, edge_per_node))
+  
+  # rewire the selected edges to a new random target node
+  rewire = function(source, num_edges) sample((1:n)[-source], size = num_edges, replace = TRUE)
+  edge_list[edge_to_rewire, 2] = unlist(mapply(rewire, 1:n, edge_per_node))
+  
+  # create graph
+  g = graph_from_edgelist(edge_list, directed = FALSE)
+  return(g)
+}
+
+plot(generate_WS_graph_fast(20,4,0.3))
+```
+
+
+## Barabàsi–Albert model
+As before, the naive approach:
+```{r BA implementation}
+
+generate_BA_graph = function(n, l) {
+  # this function generates a barabasi-albert small world graph
+  # with n nodes, and l entrance edges for each node
+  
+  # initialize edge list with the source node
+  # and with the edges between the first 2 nodes
+  edge_list = matrix(1, ncol = 2, nrow = n*l)
+  
+  edge_list[,1] = (0:(l*n - 1))%/%l + 1   # all source nodes, each appearing l times
+  edge_list[1:l,2] = 2                    # target nodes init
+  
+  # initialize degree values for each node
+  degree_ = rep(0,n)
+  degree_[c(1,2)] = 2*l
+  
+  # in each time step we connect a new node
+  for (i in 3:n) {
+    
+    # select nodes randomly based on the current degree values
+    sampled_nodes = sample(1:(i-1), size = l, replace = TRUE, prob = degree_[1:(i-1)]/(2*l*(i-1)))
+    
+    # add edges to the edge list
+    edge_list[(l*(i-1) + 1):(i*l),2] = sampled_nodes
+    
+    # update degree values for the previously inserted nodes
+    degree_[1:(i-1)] = degree_[1:(i-1)] + table(factor(sampled_nodes, 1:(i-1)))
+    
+    # update degree values for the new node
+    degree_[i] = l
+  }
+  
+  # create graph
+  g = graph_from_edgelist(edge_list, directed = FALSE)
+  return(g)
+}
+
+plot(generate_BA_graph(40,4))
+```
+
+Previously, we extracted the target nodes (according to preference), and then updated the degree distribution, now we do the opposite. It turns out this is much faster to do. The trick is always to note that sampling nodes according to preference is like sampling degrees according to a multinomial distribution (and then the increment in degree is the number of edges that each node won).
+
+
+```{r BA fast implementation}
+
+generate_BA_graph_fast = function(n, l) {
+  # this function generates a barabasi-albert small world graph
+  # with n nodes, and l entrance edges for each node
+  
+  # initialize edge list with the source node
+  # and with the edges between the first 2 nodes
+  edge_list = matrix(1, ncol = 2, nrow = n*l)
+  
+  edge_list[,1] = rep(1:n, rep(l,n))
+  edge_list[1:l,2] = 2
+  
+  
+  # initialize degree values for each node
+  degree_ = rep(l,n)
+  degree_[c(1,2)] = 2*l
+  
+  # in each time step we connect a new node
+  for (i in 3:n) {
+    
+    # extract the increment in degree distribution
+    sampled_degrees = rmultinom(1, l, prob = degree_[1:(i-1)]/(2*l*(i-1)))
+    
+    # connect the new node to the sampled sources according to their increment in degree
+    edge_list[(l*(i-1) + 1):(i*l),2] = rep(1:(i-1), sampled_degrees)
+    
+    # update degree values for the previously inserted nodes
+    degree_[1:(i-1)] = degree_[1:(i-1)] + sampled_degrees
+  }
+  
+  # create graph
+  g = graph_from_edgelist(edge_list, directed = FALSE)
+  return(g)
+}
+
+plot(generate_BA_graph_fast(40,4))
+```
+
+# Analisys
+We will fix $n=10000$ for all graphs to avoid long computation timings.
+```{r fix n}
+n = 10000
+```
+
+
+## Erdős–Rènyi random graph
+Having fixed $n$, we vary $p$ in the following grid (we avoid high values of $p$ because they make the computations really slow):
+```{r ER function analysis, echo = F}
+plot_deg_distr_ER = function(deg_g, n, p, i) {
+  h = hist(deg_g, probability = T, col = somecolors[[i%%26+1]], border = somecolornames[i%%26+1], main = TeX(paste('$p = ', p, '$', sep = '')), xlab = '', ylab = '')
+  bw = h$breaks[2] - h$breaks[1]
+  if(bw < 1) bw = 1
+  lines(floor(h$breaks), sum(h$density)* bw * dbinom(floor(h$breaks), size = n-1, prob = p), lty = 1, type = 'l', lwd = 2, col = 'red')
+}
+
+plot_diam_ER = function(p_vec, diam) {
+  plot(p_vec, diam, log = 'x', lty = 1, lwd = 2, type = 'l', ylab = '', xlab = TeX('$p$'), main = 'Diameter', col = somecolornames[[1]])
+  grid()
+}
+plot_ccoef_ER = function(p_vec, ccoef) {
+  plot(p_vec, ccoef, lty = 1, lwd = 2, type = 'l', ylab = '', xlab = TeX('$p$'), main = 'Clustering Coefficient', col = somecolornames[[2]])
+  grid()
+}
+plot_lcc_ER = function(p_vec, lccsize) {
+  plot(p_vec, lccsize, log = 'x', lty = 1, lwd = 2, type = 'l', ylab = '', xlab = TeX('$p$'), main = 'Size of Largest Connected Component', col = somecolornames[[3]])
+  grid()
+}
+
+# an heuristic sequence of probability to explore for this graph
+p_vec = c(seq(0.1/n, 2/n, 0.1/n), log(seq(exp(10/n), exp(3*log(n)/n), (exp(3*log(n)/n) - exp(10/n))/log10(n))), seq(10*log(n)/n, 0.1, 0.01), seq(0.2, 0.7, 0.1))
+
+print(p_vec)
+```
+
+And now we compute all the graphs:
+```{r ER graph generation}
+
+diam = rep(0, length(p_vec))
+ccoef = rep(0, length(p_vec))
+lccsize = rep(0, length(p_vec))
+g_vec = list()
+
+
+for (i in 1:(length(p_vec))) {
+  p = p_vec[i]
+  
+  g = generate_ER_graph_fast(n,p)
+  
+  g_vec = append(g_vec, list(degree(g)))
+  
+  diam[i] = diameter(g)
+  
+  ccoef[i] = transitivity(g, type = "average")
+  
+  lccsize[i] = max(clusters(g)$csize)/n
+}
+
+```
+
+We start by showing some of the degree distribution histograms, where we superimposed the theoretical binomial density to each of the graphs.
+```{r ER hist, echo = F, fig.width = 6, fig.asp = 1}
+
+par(mfrow = c(3,3))
+to_plot = c(5, 8, 10, 15, 20, 21, 25, 30, 35)
+for (j in to_plot) plot_deg_distr_ER(g_vec[[j]], n, p_vec[j], j)
+
+
+```
+
+
+As we can see, the theoretical density is in perfect agreement with the findings. We can also note how, for small values of $p$ the distribution is highly skewed towards $0$, as soon as $p$ gets high enough though, the distribution becomes very symmetric and with high mean value.
+
+And here are the diameter, clustering coefficient and size of the largest connected component in this range of probability values:
+```{r ER plots, echo = F, fig.width = 6, fig.height = 2}
+
+par(mfrow = c(1,3))
+plot_ccoef_ER(p_vec, ccoef)
+plot_diam_ER(p_vec, diam)
+plot_lcc_ER(p_vec, lccsize)
+
+```
+
+
+It's interesting to see this phase transition in the size of the LCC, which gets to 1 very quickly as soon as the critical value of $\frac{1}{n} = 10^{-4}$ is reached, and it reaches $1$ at around $\frac{log(n)}{n} \sim 10^{-3}$. We can also see how the diameter reaches a peak as soon as the graph becomes connected, and then it starts rapidly decreasing as expected. The clustering coefficient follows a reasonable behavior: for low values of $p$, the nodes tend not to cluster together well, while for high values the network gets more and more connected, resulting in an increase in the clustering tendency. Looking at this plot, we can also see that the clustering coefficient grows in an almost perfect linear fashion.
+
+Here is a numerical summary of the results:
+```{r ER table, echo=FALSE}
+
+data_ER = data.frame(p = p_vec, diameter = diam, clus = ccoef)
+colnames(data_ER) = c('$p$', 'Diameter', 'Clustering Coefficient')
+
+
+kable_styling(kable(data_ER, format = 'html', escape = FALSE, caption = 'Results for the Erdős–Rènyi model', align = 'lrr'))
+
+```
+
+
+## Watts–Strogatz model
+We now have two parameters to explore, we will vary $\beta$ in this range:
+```{r WS function analysis, echo=FALSE}
+
+plot_deg_distr_WS = function(deg_g, n, nei, beta, i) {
+  h = hist(deg_g, probability = T, col = somecolors[[i%%26+1]], border = somecolornames[i%%26+1], main = TeX(paste('$\\beta = ', beta, ',\ k = ', nei, '$', sep = '')), xlab = '', ylab = '')
+}
+
+plot_diam_WS = function(beta_vec, nei, diam) {
+  plot(beta_vec, diam, log = 'x', lty = 1, lwd = 2, type = 'l', ylab = '', xlab = TeX('$\\beta$'), main = TeX(paste('Diameter, $k = ', nei, '$')), col = somecolornames[[1]])
+  grid()
+}
+plot_ccoef_WS = function(beta_vec, nei, ccoef) {
+  plot(beta_vec, ccoef, log = 'x', lty = 1, lwd = 2, type = 'l', ylab = '', xlab = TeX('$\\beta$'), main = TeX(paste('Clustering Coefficient, $k = ', nei, '$')), col = somecolornames[[2]])
+  grid()
+}
+
+
+beta_vec = c(1e-6, 1e-4, 1e-3, 1e-2, 1e-1, 0.3, 0.4, 0.6, 0.8)
+nei_vec = c(2, 4, 8, 128, 512, 2048)
+
+print(beta_vec)
+
+```
+
+And the number of neighbors in this range:
+```{r WS show nei, echo=FALSE}
+print(nei_vec)
+```
+
+Here we compute the graph for every possible combination of the two:
+```{r WS graph generation}
+
+diam = matrix(0, ncol = length(beta_vec), nrow = length(nei_vec))
+ccoef = matrix(0, ncol = length(beta_vec), nrow = length(nei_vec))
+g_vec = list()
+
+
+for (j in 1:(length(nei_vec))) {
+  for (i in 1:(length(beta_vec))) {
+    nei = nei_vec[j]
+    beta = beta_vec[i]
+    
+    g = generate_WS_graph_fast(n,nei,beta)
+    
+    g_vec = append(g_vec, list(degree(g)))
+    
+    diam[j,i] = diameter(g)
+    
+    ccoef[j,i] = transitivity(g, type = "average")
+  }
+}
+
+```
+
+Here are the degree distributions for each of these graphs:
+```{r WS hist, echo = F, fig.width = 6, fig.asp = 1}
+
+k = 1
+for (i in 1:length(nei_vec)) {
+  par(mfrow = c(3,3))
+  for (j in 1:length(beta_vec)) {
+    plot_deg_distr_WS(g_vec[[k]], n, nei_vec[i], beta_vec[j], j)
+    k = k + 1
+  }
+}
+
+```
+
+
+As we can see, for small values of $\beta$, the distribution resembles the one of a ring graph (a Dirac delta), and, as the rewiring probability increases, the distribution starts spreading out and gets closer and closer to the ER random case. Moreover, we can see that increasing $k$ has the effect of speeding up this process, since more and more edges become available for the rewiring.
+
+Here are the diameter and clustering coefficient for each fixed $k$ value:
+```{r WS plots, echo = F, fig.width = 6, fig.height = 4}
+
+
+par(mfrow = c(2,3))
+for (i in 1:length(nei_vec)) plot_ccoef_WS(beta_vec, nei_vec[i], ccoef[i,])
+
+par(mfrow = c(2,3))
+for (i in 1:length(nei_vec)) plot_diam_WS(beta_vec, nei_vec[i], diam[i,])
+
+
+
+```
+
+
+With the exception of the special case $k=2$, we can see that both the diameter, and the clustering coefficient decreases, although the clustering coefficient only drops at significant values of $\beta$, while the diameter drops almost immediately. The case $k=2$ is somewhat special since, before the rewiring, no neighbours are connected with each other (the graph is a perfect ring), so the clustering coefficient is very low (and stays low even for higher values of $beta$, since there are not many edges to rewire); the diameter is initially very high, and for small values of $\beta$ it may happen that the cycle is broken and the diameter briefly gets higher. Meanwhile, the spike in the clustering coefficient is very low, so it may be due to chance. It is also interesting to note that, for high values of $k$, the diameter is already very low, so the decrease can be somewhat slower.
+
+Here is a numerical summary of the results:
+```{r WS table, echo=FALSE}
+
+data_WS = data.frame(beta = rep(beta_vec, length(nei_vec)), nei = rep(nei_vec, rep(length(beta_vec), length(nei_vec))), diameter = as.vector(t(diam)), clus = as.vector(t(ccoef)))
+colnames(data_WS) = c('$\\beta$', '$k$', 'Diameter', 'Clustering Coefficient')
+
+
+kable_styling(kable(data_WS, format = 'html', escape = FALSE, caption = 'Results for the Watts–Strogatz model', align = 'llrr'))
+
+```
+
+
+## Barabàsi–Albert model
+Having fixed $n$, we vary $l$ in the following grid:
+```{r BA function analysis, echo = F}
+plot_deg_distr_BA = function(deg_g, n, l, i) {
+  log.degree.idx = log10(deg_g)
+  bins = seq(0,max(log.degree.idx)*1.1,length.out = 15)
+  x = hist(log.degree.idx, breaks = bins, plot = F)$mid
+  y = hist(log.degree.idx, breaks = bins, plot = F)$counts
+  x = x[y>0]
+  y = y[y>0]
+  plot(x,y, log = 'y', pch = 16, xaxt = 'n', main = TeX(paste('Degree Distribution, $l = ', l, '$', sep = '')), xlab = 'Degree', ylab = '', col = somecolornames[[i%%26+1]])
+  xt = axTicks(1)
+  xt = xt[xt>0]
+  xt = 10**(xt)
+  
+  xt = round(xt)
+  axis(1, at = log10(xt), labels = xt)
+  grid()
+}
+
+
+
+plot_diam_BA = function(l_vec, diam) {
+  plot(l_vec, diam, log = 'x', lty = 1, lwd = 2, type = 'l', ylab = '', xlab = TeX('$l$'), main = 'Diameter', col = somecolornames[[1]])
+  grid()
+}
+plot_ccoef_BA = function(l_vec, ccoef) {
+  plot(l_vec, ccoef, lty = 1, lwd = 2, type = 'l', ylab = '', xlab = TeX('$l$'), main = 'Clustering Coefficient', col = somecolornames[[2]])
+  grid()
+}
+
+
+l_vec = c(1,2,4,16,32,64,256,1024,2048)
+
+print(l_vec)
+```
+And now we compute all the graphs:
+```{r BA graph generation}
+
+diam = rep(0, length(l_vec))
+ccoef = rep(0, length(l_vec))
+g_vec = list()
+
+for (i in 1:(length(l_vec))) {
+  l = l_vec[i]
+  
+  g = generate_BA_graph_fast(n,l)
+  
+  g_vec = append(g_vec, list(degree(g)))
+  
+  diam[i] = diameter(g)
+  
+  ccoef[i] = transitivity(g, type = "average")
+}
+
+```
+
+We start by showing some of the degree distributions (in loglog scale, since we expect a power law).
+```{r BA hist, echo = F, fig.width = 6, fig.asp = 1}
+
+par(mfrow = c(3,3))
+for (j in 1:(length(l_vec))) plot_deg_distr_BA(g_vec[[j]], n, l_vec[j], j)
+
+```
+
+
+The distributions are clearly asymptotically linear in the loglog space, indicating, indeed, a power law distribution. This pattern is mantained at the various levels of $l$, indicating that changing $l$ only affects the scale at which this phoenomenon happen (it just shifts the distribution on the right in the x-axis).
+
+Here are the diameter and clustering coefficient for the various values of $l$:
+```{r BA plots, echo = F, fig.width = 6, fig.height = 3}
+
+par(mfrow = c(1,2))
+plot_diam_BA(l_vec, diam)
+plot_ccoef_BA(l_vec, ccoef)
+
+```
+
+
+As we could have expected, the diameter of the network rapidly decreases as $l$ increases. The interesting thing is the fact that the diameter is already pretty small at $l=1$, indicating that this decreasing trend is also due to the network structure, and not only to the increase in the number of edges. Meanwhile, the clustering coefficient is slowly increasing, probably due to randomness, since the number of edges for each node is already extremely high; this kind of network structure favors short connections to hubs rather than dense neighborhoods.
+
+Here is a numerical summary of the results:
+```{r BA table, echo=FALSE}
+
+data_BA = data.frame(l = l_vec, diameter = diam, clus = ccoef)
+colnames(data_BA) = c('$\\ell$', 'Diameter', 'Clustering Coefficient')
+
+kable_styling(kable(data_BA, format = 'html', escape = FALSE, caption = 'Results for the Barabàsi–Albert model', align = 'lrr'))
+
+```

@@ -1,0 +1,320 @@
+---
+title: "Problem_2_3_4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r test setup, message=FALSE, warning=FALSE}
+# libraries used
+require(igraph, quietly = TRUE)
+```
+
+# Social Networks and Online Markets, Homework 1
+### Author: Christian Buda
+
+# Problem 2
+### Shortcuts?! Find $P(l,k)$
+Let's start by observing the following (trivial) properties of $P$:
+$$
+P(l,0) = \delta_{l,0}\qquad\qquad P(l,1) = \delta_{l,1}\qquad\qquad P(l,k) = 0\ \ \ \forall l>k
+$$
+We also note that we only care about the first and the last shortcut we can take between $i$ and $j$, since we are searching for shortest paths. Let's fix $k>1$ (since we already treated the other two cases above); it's clear that $P(0,k) = 0$, so let's fix $0<l<k$. As noted above, we only care about the first and last shortcuts, so let's fix a configuration in which $v_i$ and $v_{j-l + 1}$ are connected to $v$, and there are no other nodes from $v_{j-l+2}$ up to $v_j$ that are connected to $v$. The probability that both $v_i$ and $v_{j-l + 1}$ are connected to $v$ is $p^2$ (two independent successes), while the probability that no other nodes from $v_{j-l+2}$ up to $v_j$ that are connected to $v$ is $(1-p)^{l-1}$ ($l-1$ independent failures). In theory the probability of a specific configuration should also account for the connectivity of the nodes between $i+1$ and $j-l$, but we only care about those first and last shortcuts, so we can marginalize over those and obtain that the probability of having the first shortcuts at node $i$ and the last at node $j-l+1$ is $p^2(1-p)^{l-1}$. This configuration is one of the possible for having a shortest path of length $l$, but we could also have the first connection at $v_{i+1}$ and the last at $v_{j-l + 2}$; it's easy to see that this configuration has again probability $p^2(1-p)^{l-1}$ (two independent successes and $l-1$ independent failures). We can go on and consider the couples of first and last node shortcuts as
+$$
+\left\{(v_{i}, v_{j-l+ 1}), (v_{i+1}, v_{j-l + 2}), (v_{i+2}, v_{j-l + 3}), \dots, (v_{i+l-2}, v_{j-1}), (v_{i+l-1}, v_{j})\right\}
+$$
+and these are all the possible ways in which I can have a shortest path of length $l$. There are exactly $l$ of these configuration (with starting node from $v_i$ to $v_{i+l-1}$), so we have
+$$
+P(l,k) = lp^2(1-p)^{l-1}
+$$
+We are only missing the case $l=k$ now, this is realized in 3 different ways:
+
+* There is a shortcut to take, but it makes us skip just one edge (i.e. only two nodes $v_m$ and $v_{m+1}$ are connected to $v$); this is analogous to the case $l<k$, so for this case we have a term $kp^2(1-p)^{k-1}$.
+* Only one of the nodes in the path is connected to $v$; this has probability $p(1-p)^k$ (one success and $k$ failures), we have $k+1$ nodes to choose from, so in this case the probability is $(k+1)p(1-p)^k$.
+* None of the nodes in $v_i, v_{i+1}, \dots, v_{j-1}, v_j$ is connected to $v$; this has probability $(1-p)^{k+1}$ ($k+1$ failures).
+
+We now have $P(l,k)$ for all the possible values of $k>1$:
+$$
+P(l,k)= \begin{cases}
+0 & \qquad\qquad \text{if } l = 0\\
+lp^2(1-p)^{l-1} & \qquad\qquad \text{if } l<k\\
+kp^2(1-p)^{k-1}+(k+1)p(1-p)^k+(1-p)^{k+1} & \qquad\qquad \text{if } l=k\\
+0 & \qquad\qquad \text{if } l>k\\
+\end{cases}
+$$
+Which we can write more shortly, for any $0\leq k\leq n-1$, as:
+$$
+P(l,k) = \begin{cases}
+lp^2(1-p)^{l-1} + \delta_{l,k} (1-p)^k(kp+1) & \qquad\qquad \text{if } l\leq k\\
+0 & \qquad\qquad \text{if } l>k\\
+\end{cases}
+$$
+It can be verified that, for any $k$, $\sum_l P(l,k)=1$.
+
+### $\mathbb{P}(l)$ I choose you!
+To compute $\mathbb{P}(l)$ we first note that the $P(l,k)$ that we have just computed is actually the probability of having a shortest path of length $l$ conditional on the fact that the nodes are at distance $k$ on the cycle, i.e. $\mathbb{P}(l|k)$. So to compute $\mathbb{P}(l)$ we can marginalize on $k$ the joint $\mathbb{P}(l,k)$, which is obtained, using Bayes theorem, as $\mathbb{P}(l,k) = \mathbb{P}(l|k)\mathbb{P}(k)$.
+
+So we need to compute $\mathbb{P}(k)$ first; this is the probability that, taken (uniformly at random) two nodes $v_i$ and $v_j$, their distance on the cycle is $k$. The domain of $k$ is the set $\{0,1,\dots,n-1\}$; we can choose $v_i$ in $n$ ways, and then $v_j$ is fixed to be $v_{i+k}$. There are $n^2$ possible couples $(v_i,v_j)$, so:
+$$
+\mathbb{P}(k) = \frac{n}{n^2}=\frac1n
+$$
+So for $\mathbb{P}(l)$, we have:
+$$
+\begin{align}
+\mathbb{P}(l) = & \sum_{k=0}^{n-1}\mathbb{P}(l,k) = \sum_{k=0}^{n-1} \frac1n \left[lp^2(1-p)^{l-1} + \delta_{l,k} (1-p)^k(kp+1) \right]\chi_{l\leq k}(l)\\
+= & \frac1n lp^2(1-p)^{l-1} \sum_{k=0}^{n-1}\chi_{l\leq k}(l) + \frac1n \sum_{k=0}^{n-1}\delta_{l,k} (1-p)^k(kp+1) \chi_{l\leq k}(l)\\
+= & \frac1n lp^2(1-p)^{l-1} (n-l) + \frac1n (1-p)^l(lp+1)\\
+\end{align}
+$$
+
+where $\chi_{A}(x)$ is the indicator function of set $A$ computed in $x$.
+
+### Yeah but, how much is it?? $\mathbb{E}(l)$
+We want to compute
+$$
+\begin{align}
+\mathbb{E}(l) = & \sum_{l=0}^{n-1}l\mathbb{P}(l) = \frac1n \sum_{l=0}^{n-1}l^2p^2(1-p)^{l-1} (n-l) + \frac1n\sum_{l=0}^{n-1}l (1-p)^l(lp+1)\\
+= & \frac1n\sum_{l=0}^{n-1} (1-p)^{l-1} (l^2p^2(n-l) + l(1-p)(lp+1))\\
+= & \frac1n\sum_{l=0}^{n-1} (1-p)^{l-1} (nl^2p^2 - l^3p^2 + l^2p + l - l^2p^2 - lp)\\
+\end{align}
+$$
+
+Let's compute some notable sums:
+$$
+\sum_{k=1}^{n-1} x^{k-1} = \frac{1-x^{n-1}}{1-x}
+$$
+$$
+\sum_{k=1}^{n-1} kx^{k-1} = \frac{d}{dx}\sum_{k=0}^{n-1} x^k = \frac{d}{dx}\frac{1-x^n}{1-x} = \frac{(n-1)x^n + 1 - nx^{n-1}}{(1-x)^2}
+$$
+
+$$
+\begin{align}
+\sum_{k=1}^{n-1} k^2x^{k-1} = & \frac{d^2}{dx^2}\sum_{k=0}^{n-1} x^{k+1} -\frac{d}{dx}\sum_{k=0}^{n-1} x^k= \frac{d^2}{dx^2}x\frac{1-x^n}{1-x} - \frac{d}{dx}\frac{1-x^n}{1-x}\\
+= & \frac{d}{dx}\left(\frac{1-x^n}{1-x} + x \frac{d}{dx}\frac{1-x^n}{1-x} - \frac{1-x^n}{1-x}\right)=\frac{d}{dx} \frac{(n-1)x^{n+1} + x - nx^n}{(1-x)^2}  \\
+= & \frac{(1-x)((n^2-1)x^n +1-n^2x^{n-1})+2((n-1)x^{n+1}+x-nx^n)}{(1-x)^3}\\
+= & \frac{x^{n+1}(2n-1-n^2) + x^n(2n^2-2n-1) -n^2 x^{n-1} + x + 1}{(1-x)^3} \equiv g(x)
+\end{align}
+$$
+Where we defined the function $g(x)$ for later convenience. An analogous computation can be made for the sum of $k^3x^{k-1}$.
+
+Going back to $\mathbb{E}(l) = \frac1n\sum_{l=0}^{n-1} (1-p)^{l-1} (nl^2p^2 - l^3p^2 + l^2p + l - l^2p^2 - lp)$, we notice that when $n>>1$, only the term $nl^2p^2$ will be relevant, so we have:
+$$
+\lim_{n\to+\infty} \mathbb{E}(l) = \sum_{l=0}^{+\infty} (1-p)^{l-1}l^2p^2 = p^2\lim_{n\to+\infty}g(1-p)
+$$
+Notice also how all the terms of the kind $x^n$ in $g(x)$ will get really small when $n>>1$, so we have left only the $x+1$ term:
+$$
+\lim_{n\to+\infty} \mathbb{E}(l) = p^2 \frac{(1-p) + 1}{(1-(1-p))^3} = p^2\left(\frac2{p^3}-\frac1{p^2}\right) = \frac2p-1
+$$
+In this limit we have $\mathbb{E}(l)\approx 1$ for $p\approx 1$ and $\mathbb{E}(l)>>1$ for $p<<1$, as expected.
+
+Calculations could have been made simpler by passing to the limit in an earlier stage, but this was also kind of funny.
+
+# Problem 3
+
+Let's start by loading our graph in igraph. This is the adjacency matrix:
+
+```{r adjacency definition, echo = FALSE}
+A = matrix(c(0,1,1,1,0,0,1,0,0,0,
+             1,0,1,1,1,0,0,0,0,0,
+             1,1,0,1,0,0,1,0,0,0,
+             1,1,1,0,1,0,0,0,0,0,
+             0,1,0,1,0,1,0,0,1,0,
+             0,0,0,0,1,0,0,1,1,1,
+             1,0,1,0,0,0,0,1,0,1,
+             0,0,0,0,0,1,1,0,1,1,
+             0,0,0,0,1,1,0,1,0,1,
+             0,0,0,0,0,1,1,1,1,0), ncol = 10)
+
+print(A)
+```
+
+And this is another (more symmetric) view on the graph (notice how the graph is 4-regular):
+
+```{r graph plot, echo = FALSE}
+
+g = graph_from_adjacency_matrix(A, mode = 'undirected')
+
+l = matrix(c(1,2,
+             5,2,
+             2,1,
+             4,1,
+             6,0,
+             4,-1,
+             0,0,
+             1,-2,
+             5,-2,
+             2,-1), ncol = 2, byrow = TRUE)
+
+
+plot(g, layout = l, vertex.color = 'white', vertex.label.color = 'black')
+
+```
+
+### Densest subgraph
+To run the algorithm we assume that, in case of ties, the lowest numbered node is chosen.
+
+
+\begin{center}
+\begin{tabular}{ c c c }
+ cell1 & cell2 & cell3 \\ 
+ cell4 & cell5 & cell6 \\  
+ cell7 & cell8 & cell9    
+\end{tabular}
+\end{center}
+
+
+| Iteration | $\lvert S\rvert$ |              $S$          |         $deg_S(S)$        |   $\lvert E(S)\rvert$  |  $\frac{\lvert E(S)\rvert}{\lvert S\rvert}$  |
+|:----------|:-----:|--------------------------:|-------------------------:|:-----:|-----:|
+|    $0$    | $10$ | $\{1,2,3,4,5,6,7,8,9,10\}$ | $\{4,4,4,4,4,4,4,4,4,4\}$ |  $20$  |$2$|
+|    $1$    | $9$  | $\{  2,3,4,5,6,7,8,9,10\}$ | $\{  3,3,3,4,4,3,4,4,4\}$ |  $16$  |$1.78$|
+|    $2$    | $8$  | $\{    3,4,5,6,7,8,9,10\}$ | $\{    2,2,3,4,3,4,4,4\}$ |  $13$  |$1.625$|
+|    $3$    | $7$  | $\{      4,5,6,7,8,9,10\}$ | $\{      1,3,4,2,4,4,4\}$ |  $11$  |$1.57$|
+|    $4$    | $6$  | $\{        5,6,7,8,9,10\}$ | $\{        2,4,2,4,4,4\}$ |  $10$  |$1.67$|
+|    $5$    | $5$  | $\{          6,7,8,9,10\}$ | $\{          3,2,4,3,4\}$ |  $8$   |$1.6$|
+|    $6$    | $4$  | $\{            6,8,9,10\}$ | $\{            3,3,3,3\}$ |  $6$   |$1.5$|
+|    $7$    | $3$  | $\{              8,9,10\}$ | $\{              2,2,2\}$ |  $3$   |$1$|
+|    $8$    | $2$  | $\{                9,10\}$ | $\{                1,1\}$ |  $1$   |$0.5$|
+|    $9$    | $1$  | $\{                  10\}$ | $\{                  0\}$ |  $0$   |$0$|
+
+So the densest subset, according to our greedy algorithm, is the whole graph. This is also optimal, since for every set $S$ we have $deg_S(v)\leq 4$, so:
+$$\frac{\lvert E(S)\rvert}{\lvert S\rvert} = \frac{\sum_{v\in S}deg_S(v)}{2\lvert S\rvert} \leq \frac{4\lvert S \rvert}{2\lvert S \rvert} = 2$$
+
+### Minimum cut
+To find a minimum cut, we start by noting that in a 4-regular graph, there cannot exist cuts of odd size, infact given a cut $(C_1,C_2)$ we have that $2 \lvert E(C_1)\rvert = \sum_{v\in C_1}deg_{C_1}(v) = 4\lvert C_1 \rvert - size(C_1,C_2)$, so $size(C_1,C_2)$ must be even. We also note that, from the formula above, 
+$$size(C_1,C_2) = 4\lvert C_1 \rvert - 2 \lvert E(C_1)\rvert\geq4\lvert C_1 \rvert - 2 \frac{\lvert C_1 \rvert (\lvert C_1 \rvert-1)}{2} = \lvert C_1 \rvert (5-\lvert C_1 \rvert)$$
+From which follows that a cut of size $2$ must have $\lvert C_1 \rvert\geq 5$.
+
+We can now look at the graph: it's easy to find cuts of size $4$, here are $2$ of them:
+$$
+C_1 = \{1,2,3,4\}\qquad C_2 = \{5,6,7,8,9,10\}
+$$
+$$
+C_1 = \{1,2,3,4,5\}\qquad C_2 = \{6,7,8,9,10\}
+$$
+
+To convince ourselves that cuts of size $2$ do not exist note that there are two subcliques of $4$ nodes each; splitting this cliques would a create a cut size of at least $3$, so the only cuts of $5$ nodes per side must separate the $2$ subcliques, but we have already shown that this yields a cut of size $4$.
+
+### Cheeger’s inequalities
+
+Let's start by computing the conductance, since the graph is 4-regular we have that $\sum_{v\in S}deg_V(v) = 4\lvert S\rvert\$, so:
+$$
+\phi(C_1,C_2) = \frac{size(C_1,C_2)}{4\min\{\lvert C_1\rvert\,\lvert C_1\rvert\}}
+$$
+Since we have shown that the size of the minimum cut is $4$, we have that $\phi(C_1,C_2) \geq \frac{1}{\min\{\lvert C_1\rvert\,\lvert C_1\rvert\}}$, so:
+$$
+\phi = \min_{C_1,C_2} \phi(C_1,C_2) \geq \min_{C_1,C_2} \frac{1}{\min\{\lvert C_1\rvert\,\lvert C_1\rvert\}} = \frac15
+$$
+Moreover, $\phi \leq \phi(\{1,2,3,4\},\{5,6,7,8,9,10\}) = \frac14$. Let's now compute the eigenvalues of the laplacian:
+
+```{r eigenvalues}
+# degree
+d = 4
+# laplacian
+L = diag(ncol(A)) - A/d
+
+# eigenvalues
+lambda = sort(eigen(L)$values)
+print(lambda)
+```
+So we have $\lambda_2 = 0.25$, and the terms in the Cheeger’s inequality are:
+```{r}
+print(lambda[2]/2)
+print(sqrt(2*lambda[2]))
+```
+So we have:
+$$
+\frac{\lambda_2}{2} = 0.125 \leq 0.2 = \frac15\leq\phi\leq\frac14=0.25\leq0.707\approx\sqrt{2\lambda_2}
+$$
+so the inequality holds.
+
+### Find the cut(?)
+We showed that $\phi\geq\frac15$, consider now the min cut that we showed before:
+$$
+\frac15\leq\phi \leq \phi(\{1,2,3,4,5\},\{6,7,8,9,10\}) = \frac15
+$$
+
+So $\phi = \frac15$ and the cut that satisfies the inequality is:
+$$
+C_1 = \{1,2,3,4,5\}\qquad C_2 = \{6,7,8,9,10\}
+$$
+
+
+# Problem 4
+We consider a graph $G=(V,E)$ with a given function $s:V\to \mathbb{R}^+\cup\{0\}$. We denote as $\mathcal{P}(V)$ the power set of $V$ (i.e. the set of all subsets of $V$), and as $\mathcal{N}(v)$ the neighborhood of the node $v$. Then we define $f:\mathcal{P}(V)\to \mathbb{R}^+\cup\{0\}$ as:
+$$
+f(P) = \sum_{v\in h(P)} s(v)
+$$
+where $h(P) = \bigcup_{v\in P}\mathcal{N}(v)$.
+
+The goal of our algorithm is then to find:
+$$
+\underset{\substack{P\in \mathcal{P}(V) \\ \lvert P \rvert \leq k}}{\operatorname{argmax}} f(P) =  \underset{\substack{P\in \mathcal{P}(V) \\ \lvert P \rvert \leq k}}{\operatorname{argmax}} \sum_{v\in h(P)} s(v)
+$$
+
+Let's define $g(v)=\underset{p\in\mathcal{N}(v)}\sum s(p)$, then the following algorithm gives a $\left(1-\frac1e\right)$ approximation to the optimal solution:
+
+| **SET** $P=\emptyset$
+| **WHILE** $\lvert P\rvert$<k:  
+|       **SET** $v= \underset{u\in V}{\operatorname{argmax}} g(u)$;
+|       **INSERT** $v$ in $P$;
+|       **SET** $s(u)=0$ for each $u\in\mathcal{N}(v)$;
+
+<br>
+
+Too see why this is the case, let's start by observing that the algorithm above produces the same sequence as the following:
+
+| **SET** $P=\emptyset$
+| **WHILE** $\lvert P\rvert$<k:  
+|       **SET** $v= \underset{u\in V}{\operatorname{argmax}} f(P\cup \{u\})$;
+|       **INSERT** $v$ in $P$;
+
+<br>
+
+It's clear that at the first step both algorithms choose the same node (the subscript indicates which algorithms we're referring to):
+$$
+\underset{v\in V}{\operatorname{argmax}} g_1(v) = \underset{v\in V}{\operatorname{argmax}}\underset{p\in\mathcal{N}(v)}\sum s_1(p) =\underset{v\in V}{\operatorname{argmax}}\underset{p\in h(\{v\})}\sum s_2(p) = \underset{v\in V}{\operatorname{argmax}} f_2(\{v\})
+$$
+Let's assume then that the algorithms choose the same sequence of nodes for the first $i$ steps, both ending up with a starting set $A$ for the next iteration:
+$$
+\begin{align}
+\underset{v\in V\setminus A}{\operatorname{argmax}} g_1(v) = & \underset{v\in V\setminus A}{\operatorname{argmax}}\left( g_1(v) + \sum_{u\in A} g_1(u)\right) = \underset{v\in V\setminus A}{\operatorname{argmax}}\sum_{u\in A\cup\{v\}} g_1(u) = \underset{v\in V\setminus A}{\operatorname{argmax}}\sum_{u\in A\cup\{v\}} \sum_{p\in \mathcal{N}(u)} s_1(p) = \\
+= & \underset{v\in V\setminus A}{\operatorname{argmax}} \underset{p\in h(A\cup\{v\})}\sum s_1(p)  \stackrel{\star}{=} \underset{v\in V\setminus A}{\operatorname{argmax}} \underset{p\in h(A\cup\{v\})}\sum s_2(p)  = \underset{v\in V\setminus A}{\operatorname{argmax}} f_2(A\cup \{v\})
+\end{align}
+$$
+Where we used the fact that $g_1(v)=0$ for all $v\in A$. Equality $\star$ follows from the fact that, given $v^* = \underset{v\in V\setminus A}{\operatorname{argmax}} \underset{p\in h(A\cup\{v\})}\sum s_1(p)$, then for every $z\in V\setminus A$:
+$$
+\begin{align}
+\underset{p\in h(A\cup\{v^*\})}\sum s_2(p) =& \underset{p\in h(A\cup\{v^*\})\setminus h(A)}\sum s_2(p) + \underset{p\in h(A)}\sum s_2(p) = \underset{p\in h(A\cup\{v^*\})\setminus h(A)}\sum s_1(p) + \underset{p\in h(A)}\sum s_2(p) \\
+\geq &\underset{p\in h(A\cup\{z\})\setminus h(A)}\sum s_1(p) + \underset{p\in h(A)}\sum s_2(p) = \underset{p\in h(A\cup\{z\})}\sum s_2(p)
+\end{align}
+$$
+so $v^*$ maximizes also $\underset{p\in h(A\cup\{v\})}\sum s_2(p)$.
+
+
+Since $A$ is arbitrary, by iterating from the first step we get that the two algorithms must produce the same sequence. So we just need to prove that the sequence produced by the second algorithm gives a $\left(1-\frac1e\right)$ approximation to the optimal value; to do this we will use a general result on this type of greedy algorithm which states that, if $f$ is monotone and submodular, then this approach provides the $\left(1-\frac1e\right)$ approximation we are trying to prove (see for example https://homes.cs.washington.edu/~marcotcr/blog/greedy-submodular/).
+
+Let's start by proving monotonicity; given $A\subset B\subset V$, we have that:
+$$
+h(A) = \underset{v\in A}\bigcup\mathcal{N}(v)\subset\underset{v\in B}\bigcup\mathcal{N}(v) = h(B)
+$$
+
+so for $f$:
+$$
+f(A) = \sum_{v\in h(A)} s(v) \leq \sum_{v\in h(B)} s(v) = f(B)
+$$
+
+This proves the monotonicity. To prove the submodularity take $v\in V\setminus B$, then:
+$$
+h(A\cup\{v\})\setminus h(A)=\left(\bigcup_{p\in A\cup\{v\}}\mathcal{N}(p)\right)\mathbin{\big\backslash}\left(\bigcup_{p\in A}\mathcal{N}(p)\right) \supset \left(\bigcup_{p\in B\cup\{v\}}\mathcal{N}(p)\right)\mathbin{\big\backslash}\left(\bigcup_{p\in B}\mathcal{N}(p)\right) = h(B\cup\{v\})\setminus h(B)
+$$
+To prove it, take $z\in h(B\cup\{v\})\setminus h(B)$, then $z\in\mathcal{N}(v)$ and $z\notin \mathcal{N}(q)\ \ \ \forall q\in B$, but, since $A\subset B$, $z\notin \mathcal{N}(q)\ \ \ \forall q\in A$, and so $z\in h(A\cup\{v\})\setminus h(A)$. With this we can easily prove submodularity:
+$$
+f(A\cup \{v\}) - f(A) = \sum_{v\in h(A\cup \{v\})} s(v)- \sum_{v\in h(A)} s(v) = \sum_{v\in h(A\cup \{v\})\setminus h(A)} s(v) \\
+\geq \sum_{v\in h(B\cup \{v\})\setminus h(B)} s(v) = \sum_{v\in h(B\cup \{v\})} s(v)- \sum_{v\in h(B)} s(v) = f(B\cup \{v\}) - f(B)
+$$
+
+So $f$ is submodular and monotone (and non negative), and the approximation is proven.
